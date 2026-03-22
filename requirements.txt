@@ -1,0 +1,10 @@
+numpy
+matplotlib
+cartopy
+skyfield
+mplcursors
+screeninfo
+pillow
+requests
+python-dateutil
+pytz
