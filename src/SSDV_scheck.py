@@ -151,7 +151,7 @@ def plot_ground_track(ax, satellite, start_time, duration_seconds, color):
 # plots the ground track of the satellite starting from the given time for the specified
 #  duration. The track is plotted in the specified color. The function samples the 
 # satellite position every 30 seconds and converts it to latitude and longitude for 
-# plotting.
+# plotting. Handles longitude wrapping by splitting tracks that cross the date line.
     ts = load.timescale()
     # Sample every 30 seconds
     num_points = duration_seconds // 30 + 1
@@ -161,12 +161,47 @@ def plot_ground_track(ax, satellite, start_time, duration_seconds, color):
         subpoint = satellite.at(ts.utc(t)).subpoint()
         lats.append(subpoint.latitude.degrees)
         lons.append(subpoint.longitude.degrees)
-    line, = ax.plot(lons, lats, color=color, transform=ccrs.PlateCarree(), linewidth=2)
-    return line
+    
+    # Plot in segments to avoid drawing across the date line
+    segments_lons = []
+    segments_lats = []
+    current_segment_lons = []
+    current_segment_lats = []
+    
+    for i in range(len(lons)):
+        if i == 0:
+            current_segment_lons.append(lons[i])
+            current_segment_lats.append(lats[i])
+        else:
+            # Check if longitude difference indicates crossing the date line
+            lon_diff = abs(lons[i] - lons[i-1])
+            if lon_diff > 180:
+                # Start a new segment
+                if current_segment_lons:
+                    segments_lons.append(current_segment_lons)
+                    segments_lats.append(current_segment_lats)
+                current_segment_lons = [lons[i]]
+                current_segment_lats = [lats[i]]
+            else:
+                current_segment_lons.append(lons[i])
+                current_segment_lats.append(lats[i])
+    
+    # Add the last segment
+    if current_segment_lons:
+        segments_lons.append(current_segment_lons)
+        segments_lats.append(current_segment_lats)
+    
+    # Plot each segment
+    lines = []
+    for seg_lons, seg_lats in zip(segments_lons, segments_lats):
+        line, = ax.plot(seg_lons, seg_lats, color=color, transform=ccrs.PlateCarree(), linewidth=2)
+        lines.append(line)
+    
+    return lines
 
 if __name__ == "__main__":
     ax = plot_map(gridlines=False)
-    plot_locations(ax)
+    # plot_locations(ax)
     ssdv_data = read_ssdv_times()
     check_tle_file()
     satellite = create_satellite()
@@ -180,9 +215,10 @@ if __name__ == "__main__":
     line_to_data = {}
     for i, (location, start_time) in enumerate(ssdv_data):
         color = colors[i % len(colors)]
-        line = plot_ground_track(ax, satellite, start_time, PASS_LENGTH * 60, color)
-        lines.append(line)
-        line_to_data[line] = (location, start_time)
+        track_lines = plot_ground_track(ax, satellite, start_time, PASS_LENGTH * 60, color)
+        for line in track_lines:
+            lines.append(line)
+            line_to_data[line] = (location, start_time)
     
     # Add tooltips for all tracks
     cursor = mplcursors.cursor(lines, hover=True)
